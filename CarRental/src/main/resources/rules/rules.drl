@@ -1,0 +1,498 @@
+package com.car.rental
+import java.util.Date;
+import java.util.Calendar;
+
+rule "Initialisation" salience 10
+	when
+	then
+	//polityki cenowe dla kategorii
+	insert(new PricingPolicy(Category.A, 69.0, 59.0, 3, 10.0, 10.0, 1.0, 0.5, 20.0, 500.0, 3.0));
+	insert(new PricingPolicy(Category.B, 79.0, 69.0, 3, 10.0, 10.0, 1.0, 0.5, 20.0, 500.0, 3.0));
+	insert(new PricingPolicy(Category.D, 89.0, 79.0, 3, 10.0, 10.0, 1.0, 0.5, 20.0, 500.0, 3.0));
+
+    //samochody
+	insert(new Car("samochód1", Category.A));
+	insert(new Car("samochód2", Category.A));
+	insert(new Car("samochód3", Category.B));
+	insert(new Car("samochód4", Category.D));
+	insert(new Car("samochód5", Category.D));
+
+    //klienci - rezerwacje - zwroty
+    Client client1 = new Client("Klient1", Active.YES);
+    insert(client1);
+    Reservation res1 = new Reservation(client1, Category.None, "11/11/2016", "12/11/2016", 1, 1);
+    insert(res1);
+    insert(new Return(res1, "12/11/2016", 66, 0, 0, 0));
+
+    Client client2 = new Client("Klient2", Active.NO);
+    insert(client2);
+    Reservation res2_1 = new Reservation(client2, Category.B, "10/11/2016", "13/11/2016", 0, 1);
+    insert(res2_1);
+    Reservation res2_2 = new Reservation(client2, Category.A, "11/11/2016", "14/11/2016", 0, 0);
+    insert(res2_2);
+    insert(new Return(res2_1, "13/11/2016", 100, 0, 0, 0));
+
+    Client client3 = new Client("Klient3", Active.NO);
+    insert(client3);
+    Reservation res3 = new Reservation(client3, Category.B, "11/11/2016", "16/11/2016", 0, 0);
+    insert(res3);
+    insert(new Return(res3, "18/11/2016", 1000, 2, 1, 0));
+
+	end
+
+//salience 9: etap sprawdzania poprawności i preobliczeń
+
+rule "Reservation_NegativeChildSeat" salience 9
+    when res : Reservation(rentTotalPrice == -1, childSeat < 0)
+    then
+        System.out.println("###");
+        System.out.println("Rezerwacja dla " + res.client.name + " na termin od " + res.getRentDateAsString() + " do " + res.getReturnDateAsString() +
+                           " zostaje usunięta, ponieważ niemożliwe jest wypożyczenie ujemnej liczby fotelików dziecięcych (" + res.childSeat + ").");
+        System.out.println("###");
+        System.out.println(" ");
+        System.out.println(" ");
+        retract(res);
+    end
+
+rule "Reservation_NegativeBikeRack" salience 9
+    when res : Reservation(rentTotalPrice == -1, bikeRack < 0)
+    then
+        System.out.println("###");
+        System.out.println("Rezerwacja dla " + res.client.name + " na termin od " + res.getRentDateAsString() + " do " + res.getReturnDateAsString() +
+                           " zostaje usunięta, ponieważ niemożliwe jest wypożyczenie ujemnej liczby bagażników rowerowych (" + res.bikeRack + ").");
+        System.out.println("###");
+        System.out.println(" ");
+        System.out.println(" ");
+        retract(res);
+    end
+
+rule "Reservation_ReturnBeforeRent" salience 9
+    when res : Reservation(rentTotalPrice == -1, returnDate.before(rentDate))
+    then
+        System.out.println("###");
+        System.out.println("Rezerwacja dla " + res.client.name + " na termin od " + res.getRentDateAsString() + " do " + res.getReturnDateAsString() +
+                           " zostaje usunięta, ponieważ niemożliwy jest zwrot samochodu przed jego wynajęciem.");
+        System.out.println("###");
+        System.out.println(" ");
+        System.out.println(" ");
+        retract(res);
+    end
+
+rule "Return_NegativeDistance" salience 9
+    when ret : Return(returnTotalPrice == -1, travelledDistance < 0)
+    then
+        System.out.println("###");
+        System.out.println("Zwrot dla " + ret.reservation.client.name + " w dniu " + ret.getActualReturnDateAsString() +
+                           " zostaje usunięty z systemu, ponieważ niemożliwe jest przebycie ujemnej odległości (" + ret.travelledDistance + ").");
+        System.out.println("###");
+        System.out.println(" ");
+        System.out.println(" ");
+        retract(ret);
+    end
+
+rule "Return_NegativeMissingHubcaps" salience 9
+    when ret : Return(returnTotalPrice == -1, missingHubcaps < 0)
+    then
+        System.out.println("###");
+        System.out.println("Zwrot dla " + ret.reservation.client.name + " w dniu " + ret.getActualReturnDateAsString() +
+                           " zostaje usunięty z systemu, ponieważ niemożliwe jest zgubienie ujemnej liczby kołpaków (" + ret.missingHubcaps + ").");
+        System.out.println("###");
+        System.out.println(" ");
+        System.out.println(" ");
+        retract(ret);
+    end
+
+rule "Return_MoreThanFourMissingHubcaps" salience 9
+    when ret : Return(returnTotalPrice == -1, missingHubcaps > 4)
+    then
+        System.out.println("###");
+        System.out.println("Zwrot dla " + ret.reservation.client.name + " w dniu " + ret.getActualReturnDateAsString() +
+                           " zostaje usunięty z systemu, ponieważ niemożliwe jest zgubienie więcej niż 4 kołpaków w 4-kołowym samochodzie (" + ret.missingHubcaps + ").");
+        System.out.println("###");
+        System.out.println(" ");
+        System.out.println(" ");
+        retract(ret);
+    end
+
+rule "Return_NegativeMissingRegistrationBook" salience 9
+    when ret : Return(returnTotalPrice == -1, missingRegistrationBook < 0)
+    then
+        System.out.println("###");
+        System.out.println("Zwrot dla " + ret.reservation.client.name + " w dniu " + ret.getActualReturnDateAsString() +
+                           " zostaje usunięty z systemu, ponieważ niemożliwe jest zgubienie ujemnej liczby dowodów rejestracyjnych (" + ret.missingRegistrationBook + ").");
+        System.out.println("###");
+        System.out.println(" ");
+        System.out.println(" ");
+        retract(ret);
+    end
+
+rule "Return_MoreThanOneMissingRegistrationBook" salience 9
+    when ret : Return(returnTotalPrice == -1, missingRegistrationBook > 1)
+    then
+        System.out.println("###");
+        System.out.println("Zwrot dla " + ret.reservation.client.name + " w dniu " + ret.getActualReturnDateAsString() +
+                           " zostaje usunięty z systemu, ponieważ niemożliwe jest zgubienie więcej niż jednego dowodu rejestracyjnego (" + ret.missingRegistrationBook + ").");
+        System.out.println("###");
+        System.out.println(" ");
+        System.out.println(" ");
+        retract(ret);
+    end
+
+rule "Return_NegativeMissingAssurance" salience 9
+    when ret : Return(returnTotalPrice == -1, missingAssurance < 0)
+    then
+        System.out.println("###");
+        System.out.println("Zwrot dla " + ret.reservation.client.name + " w dniu " + ret.getActualReturnDateAsString() +
+                           " zostaje usunięty z systemu, ponieważ niemożliwe jest zgubienie ujemnej liczby polis ubezpieczeniowych (" + ret.missingAssurance + ").");
+        System.out.println("###");
+        System.out.println(" ");
+        System.out.println(" ");
+        retract(ret);
+    end
+
+rule "Return_MoreThanOneMissingAssurance" salience 9
+    when ret : Return(returnTotalPrice == -1, missingAssurance > 1)
+    then
+        System.out.println("###");
+        System.out.println("Zwrot dla " + ret.reservation.client.name + " w dniu " + ret.getActualReturnDateAsString() +
+                           " zostaje usunięty z systemu, ponieważ niemożliwe jest zgubienie więcej niż jednej polisy ubezpieczniowej (" + ret.missingAssurance + ").");
+        System.out.println("###");
+        System.out.println(" ");
+        System.out.println(" ");
+        retract(ret);
+    end
+
+rule "Return_DateBeforeRent" salience 9
+    when ret : Return(returnTotalPrice == -1, actualReturnDate.before(reservation.rentDate))
+    then
+        System.out.println("###");
+        System.out.println("Zwrot dla " + ret.reservation.client.name + " w dniu " + ret.getActualReturnDateAsString() +
+                           " zostaje usunięty z systemu, ponieważ niemożliwy jest zwrot samochodu przed jego wynajęciem (" + ret.reservation.getRentDateAsString() + ").");
+        System.out.println("###");
+        System.out.println(" ");
+        System.out.println(" ");
+        retract(ret);
+    end
+
+rule "PricingPolicy_NegativeValue" salience 9
+    when pp : PricingPolicy(higherPrice < 0 || lowerPrice < 0 || maxDaysHigherPrice < 0 || childSeatPrice < 0 || bikeRackPrice < 0 || kmCostHigher < 0 || kmCostLower < 0 || missingHubcapPenalty < 0 || missingDocumentPenalty < 0 || delayDayMultiplier < 0)
+    then
+         System.out.println("###");
+         System.out.println("Polityka cenowa dla kategorii " + pp.category +
+                            " zostaje usunięta z systemu, ponieważ nie może zawierać ujemnych wartości.");
+         System.out.println("###");
+         System.out.println(" ");
+         System.out.println(" ");
+         retract(pp);
+    end
+
+rule "PricingPolicy_HigherLower" salience 9
+    when pp : PricingPolicy((higherPrice < lowerPrice) || (kmCostHigher < kmCostLower))
+    then
+         System.out.println("###");
+         System.out.println("Polityka cenowa dla kategorii " + pp.category +
+                            " zostaje usunięta z systemu, ponieważ wyższe taryfy cenowe muszą być większe od niższych taryf cenowych.");
+         System.out.println("###");
+         System.out.println(" ");
+         System.out.println(" ");
+         retract(pp);
+    end
+
+rule "PricingPolicy_MaxDaysHigherPrice_Zero" salience 9
+    when pp : PricingPolicy(maxDaysHigherPrice == 0)
+    then
+         System.out.println("###");
+         System.out.println("Polityka cenowa dla kategorii " + pp.category +
+                            " zostaje usunięta z systemu, ponieważ maksymalna liczba dni do stosowania wyższego cennika nie może być równa zero.");
+         System.out.println("###");
+         System.out.println(" ");
+         System.out.println(" ");
+         retract(pp);
+    end
+
+rule "PricingPolicy_DelayDayMultiplier_Zero" salience 9
+    when pp : PricingPolicy(delayDayMultiplier == 0)
+    then
+         System.out.println("###");
+         System.out.println("Polityka cenowa dla kategorii " + pp.category +
+                            " zostaje usunięta z systemu, ponieważ mnożnik kosztu dziennego za opóźnienie nie może być równy zero.");
+         System.out.println("###");
+         System.out.println(" ");
+         System.out.println(" ");
+         retract(pp);
+    end
+
+rule "PricingPolicy_DuplicateCategory" salience 9
+    when pp1 : PricingPolicy()
+         pp2 : PricingPolicy(pp2 != pp1, category == pp1.category)
+    then
+         System.out.println("###");
+         System.out.println("Polityka cenowa dla kategorii " + pp2.category +
+                            " zostaje usunięta z systemu, ponieważ w systemie już istnieje polityka cenowa dla tej kategorii.");
+         System.out.println("###");
+         System.out.println(" ");
+         System.out.println(" ");
+         retract(pp2);
+    end
+
+rule "Reservation_StartingDuringOtherReservation" salience 9
+    when res1 : Reservation(rentTotalPrice == -1)
+         res2 : Reservation(rentTotalPrice == -1, res2 != res1, client == res1.client, !rentDate.before(res1.rentDate), !rentDate.after(res1.returnDate) )
+    then
+        System.out.println("###");
+        System.out.println("Rezerwacja dla " + res2.client.name + " na termin od " + res2.getRentDateAsString() + " do " + res2.getReturnDateAsString() +
+                           " zostaje usunięta, ponieważ koliduje z inną rezerwacją tego klienta od " + res1.getRentDateAsString() + " do " + res1.getReturnDateAsString() + ".");
+        System.out.println("###");
+        System.out.println(" ");
+        System.out.println(" ");
+        retract(res2);
+    end
+
+rule "CategoryNone_AssignA" salience 9
+    when res : Reservation(preferredCategory == Category.None, rentTotalPrice == -1)
+    then
+        res.preferredCategory = Category.A;
+        update(res);
+    end
+
+//salience 8: etap obliczania proponowanej ceny
+rule "ProposedPrice_Higher" salience 8
+    when res : Reservation(rentTotalPrice == -1.0)
+         car : Car(category == res.preferredCategory)
+         pp : PricingPolicy(category == res.preferredCategory, res.getRentDays() <= maxDaysHigherPrice)
+         not res2 : Reservation(res2 != res, rentedCar == car, (!rentDate.after(res.rentDate) && !returnDate.before(res.rentDate)) || (!res.rentDate.after(res2.rentDate) && !res.returnDate.before(res2.rentDate)))
+    then
+        res.rentedCar = car;
+        res.rentDaysPrice = pp.higherPrice * res.getRentDays();
+        res.equipmentPrice = Math.max(res.childSeat * pp.childSeatPrice + res.bikeRack * pp.bikeRackPrice - (res.client.loyaltyProgram.getVal() * Math.max(pp.childSeatPrice, pp.bikeRackPrice)), 0.0);
+        res.rentTotalPrice = res.rentDaysPrice + res.equipmentPrice;
+        update(res);
+        //System.out.println(res.client.name + " dostaje samochód " + car.name + " w proponowanej cenie: " + res.rentTotalPrice);
+    end
+
+rule "ProposedPrice_Lower" salience 8
+    when res : Reservation(rentTotalPrice == -1.0)
+         car : Car(category == res.preferredCategory)
+         pp : PricingPolicy(category == res.preferredCategory, res.getRentDays() > maxDaysHigherPrice)
+         not res2 : Reservation(res2 != res, rentedCar == car, (!rentDate.after(res.rentDate) && !returnDate.before(res.rentDate)) || (!res.rentDate.after(res2.rentDate) && !res.returnDate.before(res2.rentDate)))
+    then
+        res.rentedCar = car;
+        res.rentDaysPrice = pp.lowerPrice * res.getRentDays();
+        res.equipmentPrice = Math.max(res.childSeat * pp.childSeatPrice + res.bikeRack * pp.bikeRackPrice - (res.client.loyaltyProgram.getVal() * Math.max(pp.childSeatPrice, pp.bikeRackPrice)), 0.0);
+        res.rentTotalPrice = res.rentDaysPrice + res.equipmentPrice;
+        update(res);
+        //System.out.println(res.client.name + " dostaje samochód " + car.name + " w proponowanej cenie: " + res.rentTotalPrice);
+    end
+
+//salience 7: etap obliczania proponowanej ceny, gdy auto z danej kategorii jest niedostępne
+
+rule "ProposedPrice_Higher_UnavailableCategory" salience 7
+    when res : Reservation(rentTotalPrice == -1.0)
+         car : Car(category.getVal() > res.preferredCategory.getVal())
+         pp : PricingPolicy(category == res.preferredCategory, res.getRentDays() <= maxDaysHigherPrice)
+         not res2 : Reservation(res2 != res, rentedCar == car, (!rentDate.after(res.rentDate) && !returnDate.before(res.rentDate)) || (!res.rentDate.after(res2.rentDate) && !res.returnDate.before(res2.rentDate)))
+    then
+        res.rentedCar = car;
+        res.rentDaysPrice = pp.higherPrice * res.getRentDays();
+        res.equipmentPrice = Math.max(res.childSeat * pp.childSeatPrice + res.bikeRack * pp.bikeRackPrice - (res.client.loyaltyProgram.getVal() * Math.max(pp.childSeatPrice, pp.bikeRackPrice)), 0.0);
+        res.rentTotalPrice = res.rentDaysPrice + res.equipmentPrice;
+        update(res);
+        //System.out.println(res.client.name + " dostaje samochód " + car.name + " w proponowanej cenie: " + res.rentTotalPrice);
+    end
+
+rule "ProposedPrice_Lower_UnavailableCategory" salience 7
+    when res : Reservation(rentTotalPrice == -1.0)
+         car : Car(category.getVal() > res.preferredCategory.getVal())
+         pp : PricingPolicy(category == res.preferredCategory, res.getRentDays() > maxDaysHigherPrice)
+         not res2 : Reservation(res2 != res, rentedCar == car, (!rentDate.after(res.rentDate) && !returnDate.before(res.rentDate)) || (!res.rentDate.after(res2.rentDate) && !res.returnDate.before(res2.rentDate)))
+    then
+        res.rentedCar = car;
+        res.rentDaysPrice = pp.lowerPrice * res.getRentDays();
+        res.equipmentPrice = Math.max(res.childSeat * pp.childSeatPrice + res.bikeRack * pp.bikeRackPrice - (res.client.loyaltyProgram.getVal() * Math.max(pp.childSeatPrice, pp.bikeRackPrice)), 0.0);
+        res.rentTotalPrice = res.rentDaysPrice + res.equipmentPrice;
+        update(res);
+        //System.out.println(res.client.name + " dostaje samochód " + car.name + " w proponowanej cenie: " + res.rentTotalPrice);
+    end
+
+//salience 6: etap obliczania ostatecznego kosztu lub zakomunikowanie braku możliwości rezerwacji
+rule "ReservationCantBeFulfilled" salience 6
+    when res : Reservation(rentTotalPrice == -1.0)
+    then
+        System.out.println("###");
+        System.out.println(res.client.name + " nie ma dostępnego samochodu w odpowiedniej (ani wyższej) kategorii z odpowiednią polityką cenową do rezerwacji od " + res.getRentDateAsString() + " do " + res.getReturnDateAsString() + ", więc rezerwacja ta zostaje usunięta.");
+        System.out.println("###");
+        System.out.println(" ");
+        System.out.println(" ");
+        retract(res);
+    end
+
+rule "FinalPrice_Higher" salience 6
+    when res : Reservation(rentTotalPrice != -1.0)
+         pp : PricingPolicy(category == res.preferredCategory, res.getRentDays() <= maxDaysHigherPrice)
+         ret : Return(reservation == res, returnTotalPrice == -1.0)
+    then
+        ret.distancePrice = ret.travelledDistance * pp.kmCostHigher;
+        ret.missingHubcapPenalty = ret.missingHubcaps * pp.missingHubcapPenalty;
+        ret.missingDocumentPenalty = ret.missingRegistrationBook * pp.missingDocumentPenalty + ret.missingAssurance * pp.missingDocumentPenalty;
+        ret.delayPenalty = Math.max((res.getActualRentDays(ret.actualReturnDate) - res.getRentDays()) * pp.delayDayMultiplier * pp.higherPrice, 0);
+        ret.returnTotalPrice = ret.distancePrice + ret.missingHubcapPenalty + ret.missingDocumentPenalty + ret.delayPenalty;
+        update(ret);
+        //System.out.println(res.client.name + " musi zapłacić w sumie: " + (res.rentTotalPrice + ret.returnTotalPrice));
+    end
+
+rule "FinalPrice_Lower" salience 6
+    when res : Reservation(rentTotalPrice != -1.0)
+         pp : PricingPolicy(category == res.preferredCategory, res.getRentDays() > maxDaysHigherPrice)
+         ret : Return(reservation == res, returnTotalPrice == -1.0)
+    then
+        ret.distancePrice = ret.travelledDistance * pp.kmCostLower;
+        ret.missingHubcapPenalty = ret.missingHubcaps * pp.missingHubcapPenalty;
+        ret.missingDocumentPenalty = ret.missingRegistrationBook * pp.missingDocumentPenalty + ret.missingAssurance * pp.missingDocumentPenalty;
+        ret.delayPenalty = Math.max((res.getActualRentDays(ret.actualReturnDate) - res.getRentDays()) * pp.delayDayMultiplier * pp.lowerPrice, 0);
+        ret.returnTotalPrice = ret.distancePrice + ret.missingHubcapPenalty + ret.missingDocumentPenalty + ret.delayPenalty;
+        update(ret);
+        //System.out.println(res.client.name + " musi zapłacić w sumie: " + (res.rentTotalPrice + ret.returnTotalPrice));
+    end
+
+//salience 5: etap wypisywania podsumowań
+rule "Reservation_NoReturn" salience 5
+    when res : Reservation(rentTotalPrice != -1.0)
+         not ret : Return(reservation == res)
+    then
+         System.out.println("###");
+         System.out.println(res.client.name);
+         System.out.println("Rezerwacja od " + res.getRentDateAsString() + " do " + res.getReturnDateAsString());
+         System.out.println("Pojazd " + res.rentedCar.name + " kat. " + res.rentedCar.category + " nie został zwrócony.");
+         System.out.println("Odpowiednie podsumowanie zostanie wygenerowane, gdy " + res.client.name + " zwróci " + res.rentedCar.name + ".");
+         System.out.println("###");
+         System.out.println(" ");
+         System.out.println(" ");
+   end
+
+rule "PrintSummary_HigherPrice_NoLoyaltyDiscountUsed" salience 5
+    when pp : PricingPolicy()
+         res : Reservation(rentTotalPrice != -1.0, res.preferredCategory == pp.category, getRentDays() <= pp.maxDaysHigherPrice,
+                (client.loyaltyProgram == Active.NO || (client.loyaltyProgram == Active.YES && (res.equipmentPrice == res.childSeat * pp.childSeatPrice + res.bikeRack * pp.bikeRackPrice))))
+         ret : Return(reservation == res, returnTotalPrice != -1.0)
+    then
+         System.out.println("###");
+         System.out.println(res.client.name);
+         System.out.println("Rezerwacja od " + res.getRentDateAsString() + " do " + res.getReturnDateAsString());
+         System.out.println("Pojazd: " + res.rentedCar.name + " kat. " + res.rentedCar.category + ".");
+         System.out.println("Cennik dla kat. " + pp.category + ".");
+         System.out.println("###");
+         System.out.println("Wypożyczenie " + res.getRentDays() + "-dniowe:\t\t\t\t" + res.getRentDays() + "*" + pp.higherPrice + " = " + res.rentDaysPrice);
+         System.out.println("Fotelik, bagażnik rowerowy:\t\t\t" + res.childSeat + "*" + pp.childSeatPrice + " + " + res.bikeRack + "*" + pp.bikeRackPrice + " = " + res.equipmentPrice);
+         System.out.println("--------------------------------------------------------------");
+         System.out.println("SUMA wypożyczenie:\t\t\t\t\t" + res.rentTotalPrice);
+         System.out.println("###");
+         System.out.println("Zwrot dnia " + ret.getActualReturnDateAsString());
+         System.out.println("###");
+         System.out.println(ret.travelledDistance + "km\t\t\t\t\t\t\t\t" + ret.travelledDistance + "*" + pp.kmCostHigher + " = " + ret.distancePrice);
+         System.out.println(ret.missingHubcaps + " szt. brakujących kołpaków:\t\t" + ret.missingHubcaps + "*" + pp.missingHubcapPenalty + " = " + ret.missingHubcapPenalty);
+         System.out.println("Brak dowodu rej., polisy ubezp.:\t" + ret.missingRegistrationBook + "*" + pp.missingDocumentPenalty + " + " + ret.missingAssurance + "*" + pp.missingDocumentPenalty + " = " + ret.missingDocumentPenalty);
+         System.out.println("Opóźnienie:\t\t\t\t\t\t\t" + Math.max((res.getActualRentDays(ret.actualReturnDate) - res.getRentDays()), 0) + "*" + pp.delayDayMultiplier + "*" + pp.higherPrice + " = " + ret.delayPenalty);
+         System.out.println("--------------------------------------------------------------");
+         System.out.println("SUMA oddanie:\t\t\t\t\t\t" + ret.returnTotalPrice);
+         System.out.println("--------------------------------------------------------------");
+         System.out.println("SUMA:\t\t\t\t\t\t\t\t" + (res.rentTotalPrice + ret.returnTotalPrice));
+         System.out.println("###");
+         System.out.println(" ");
+         System.out.println(" ");
+    end
+
+rule "PrintSummary_LowerPrice_NoLoyaltyDiscountUsed" salience 5
+    when pp : PricingPolicy()
+                  res : Reservation(rentTotalPrice != -1.0, res.preferredCategory == pp.category, getRentDays() > pp.maxDaysHigherPrice,
+                         (client.loyaltyProgram == Active.NO || (client.loyaltyProgram == Active.YES && (res.equipmentPrice == res.childSeat * pp.childSeatPrice + res.bikeRack * pp.bikeRackPrice))))
+         ret : Return(reservation == res, returnTotalPrice != -1.0)
+    then
+         System.out.println("###");
+         System.out.println(res.client.name);
+         System.out.println("Rezerwacja od " + res.getRentDateAsString() + " do " + res.getReturnDateAsString());
+         System.out.println("Pojazd: " + res.rentedCar.name + " kat. " + res.rentedCar.category + ".");
+         System.out.println("Cennik dla kat. " + pp.category + ".");
+         System.out.println("###");
+         System.out.println("Wypożyczenie " + res.getRentDays() + "-dniowe:\t\t\t\t" + res.getRentDays() + "*" + pp.lowerPrice + " = " + res.rentDaysPrice);
+         System.out.println("Fotelik, bagażnik rowerowy:\t\t\t" + res.childSeat + "*" + pp.childSeatPrice + " + " + res.bikeRack + "*" + pp.bikeRackPrice + " = " + res.equipmentPrice);
+         System.out.println("--------------------------------------------------------------");
+         System.out.println("SUMA wypożyczenie:\t\t\t\t\t" + res.rentTotalPrice);
+         System.out.println("###");
+         System.out.println("Zwrot dnia " + ret.getActualReturnDateAsString());
+         System.out.println("###");
+         System.out.println(ret.travelledDistance + "km\t\t\t\t\t\t\t\t" + ret.travelledDistance + "*" + pp.kmCostLower + " = " + ret.distancePrice);
+         System.out.println(ret.missingHubcaps + " szt. brakujących kołpaków:\t\t" + ret.missingHubcaps + "*" + pp.missingHubcapPenalty + " = " + ret.missingHubcapPenalty);
+         System.out.println("Brak dowodu rej., polisy ubezp.:\t" + ret.missingRegistrationBook + "*" + pp.missingDocumentPenalty + " + " + ret.missingAssurance + "*" + pp.missingDocumentPenalty + " = " + ret.missingDocumentPenalty);
+         System.out.println("Opóźnienie:\t\t\t\t\t\t\t" + Math.max((res.getActualRentDays(ret.actualReturnDate) - res.getRentDays()), 0) + "*" + pp.delayDayMultiplier + "*" + pp.lowerPrice + " = " + ret.delayPenalty);
+         System.out.println("--------------------------------------------------------------");
+         System.out.println("SUMA oddanie:\t\t\t\t\t\t" + ret.returnTotalPrice);
+         System.out.println("--------------------------------------------------------------");
+         System.out.println("SUMA:\t\t\t\t\t\t\t\t" + (res.rentTotalPrice + ret.returnTotalPrice));
+         System.out.println("###");
+         System.out.println(" ");
+         System.out.println(" ");
+    end
+
+rule "PrintSummary_HigherPrice_LoyaltyDiscountUsed" salience 5
+    when pp : PricingPolicy()
+         res : Reservation(rentTotalPrice != -1.0, res.preferredCategory == pp.category, getRentDays() <= pp.maxDaysHigherPrice,
+                (client.loyaltyProgram == Active.YES && (res.equipmentPrice < res.childSeat * pp.childSeatPrice + res.bikeRack * pp.bikeRackPrice)))
+         ret : Return(reservation == res, returnTotalPrice != -1.0)
+    then
+         System.out.println("###");
+         System.out.println(res.client.name);
+         System.out.println("Rezerwacja od " + res.getRentDateAsString() + " do " + res.getReturnDateAsString());
+         System.out.println("Pojazd: " + res.rentedCar.name + " kat. " + res.rentedCar.category + ".");
+         System.out.println("Cennik dla kat. " + pp.category + ".");
+         System.out.println("###");
+         System.out.println("Wypożyczenie " + res.getRentDays() + "-dniowe:\t\t\t\t" + res.getRentDays() + "*" + pp.higherPrice + " = " + res.rentDaysPrice);
+         System.out.println("Fotelik, bagażnik rowerowy:\t\t\t" + res.childSeat + "*" + pp.childSeatPrice + " + " + res.bikeRack + "*" + pp.bikeRackPrice + " - " + Math.max(pp.childSeatPrice, pp.bikeRackPrice) + " = " + res.equipmentPrice + " (wykorzystano zniżkę!)");
+         System.out.println("--------------------------------------------------------------");
+         System.out.println("SUMA wypożyczenie:\t\t\t\t\t" + res.rentTotalPrice);
+         System.out.println("###");
+         System.out.println("Zwrot dnia " + ret.getActualReturnDateAsString());
+         System.out.println("###");
+         System.out.println(ret.travelledDistance + "km\t\t\t\t\t\t\t\t" + ret.travelledDistance + "*" + pp.kmCostHigher + " = " + ret.distancePrice);
+         System.out.println(ret.missingHubcaps + " szt. brakujących kołpaków:\t\t" + ret.missingHubcaps + "*" + pp.missingHubcapPenalty + " = " + ret.missingHubcapPenalty);
+         System.out.println("Brak dowodu rej., polisy ubezp.:\t" + ret.missingRegistrationBook + "*" + pp.missingDocumentPenalty + " + " + ret.missingAssurance + "*" + pp.missingDocumentPenalty + " = " + ret.missingDocumentPenalty);
+         System.out.println("Opóźnienie:\t\t\t\t\t\t\t" + Math.max((res.getActualRentDays(ret.actualReturnDate) - res.getRentDays()), 0) + "*" + pp.delayDayMultiplier + "*" + pp.higherPrice + " = " + ret.delayPenalty);
+         System.out.println("--------------------------------------------------------------");
+         System.out.println("SUMA oddanie:\t\t\t\t\t\t" + ret.returnTotalPrice);
+         System.out.println("--------------------------------------------------------------");
+         System.out.println("SUMA:\t\t\t\t\t\t\t\t" + (res.rentTotalPrice + ret.returnTotalPrice));
+         System.out.println("###");
+         System.out.println(" ");
+         System.out.println(" ");
+    end
+
+rule "PrintSummary_LowerPrice_LoyaltyDiscountUsed" salience 5
+    when pp : PricingPolicy()
+                  res : Reservation(rentTotalPrice != -1.0, res.preferredCategory == pp.category, getRentDays() > pp.maxDaysHigherPrice,
+                         (client.loyaltyProgram == Active.YES && (res.equipmentPrice < res.childSeat * pp.childSeatPrice + res.bikeRack * pp.bikeRackPrice)))
+         ret : Return(reservation == res, returnTotalPrice != -1.0)
+    then
+         System.out.println("###");
+         System.out.println(res.client.name);
+         System.out.println("Rezerwacja od " + res.getRentDateAsString() + " do " + res.getReturnDateAsString());
+         System.out.println("Pojazd: " + res.rentedCar.name + " kat. " + res.rentedCar.category + ".");
+         System.out.println("Cennik dla kat. " + pp.category + ".");
+         System.out.println("###");
+         System.out.println("Wypożyczenie " + res.getRentDays() + "-dniowe:\t\t\t\t" + res.getRentDays() + "*" + pp.lowerPrice + " = " + res.rentDaysPrice);
+         System.out.println("Fotelik, bagażnik rowerowy:\t\t\t" + res.childSeat + "*" + pp.childSeatPrice + " + " + res.bikeRack + "*" + pp.bikeRackPrice + " - " + Math.max(pp.childSeatPrice, pp.bikeRackPrice) + " = " + res.equipmentPrice + " (wykorzystano zniżkę!)");
+         System.out.println("--------------------------------------------------------------");
+         System.out.println("SUMA wypożyczenie:\t\t\t\t\t" + res.rentTotalPrice);
+         System.out.println("###");
+         System.out.println("Zwrot dnia " + ret.getActualReturnDateAsString());
+         System.out.println("###");
+         System.out.println(ret.travelledDistance + "km\t\t\t\t\t\t\t\t" + ret.travelledDistance + "*" + pp.kmCostLower + " = " + ret.distancePrice);
+         System.out.println(ret.missingHubcaps + " szt. brakujących kołpaków:\t\t" + ret.missingHubcaps + "*" + pp.missingHubcapPenalty + " = " + ret.missingHubcapPenalty);
+         System.out.println("Brak dowodu rej., polisy ubezp.:\t" + ret.missingRegistrationBook + "*" + pp.missingDocumentPenalty + " + " + ret.missingAssurance + "*" + pp.missingDocumentPenalty + " = " + ret.missingDocumentPenalty);
+         System.out.println("Opóźnienie:\t\t\t\t\t\t\t" + Math.max((res.getActualRentDays(ret.actualReturnDate) - res.getRentDays()), 0) + "*" + pp.delayDayMultiplier + "*" + pp.lowerPrice + " = " + ret.delayPenalty);
+         System.out.println("--------------------------------------------------------------");
+         System.out.println("SUMA oddanie:\t\t\t\t\t\t" + ret.returnTotalPrice);
+         System.out.println("--------------------------------------------------------------");
+         System.out.println("SUMA:\t\t\t\t\t\t\t\t" + (res.rentTotalPrice + ret.returnTotalPrice));
+         System.out.println("###");
+         System.out.println(" ");
+         System.out.println(" ");
+    end
